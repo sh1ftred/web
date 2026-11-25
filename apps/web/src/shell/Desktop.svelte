@@ -61,6 +61,7 @@
   });
   /** The store is a window like any other (D-048); it is opened at an address when one was shared. */
   const LAUNCHER = 'launcher';
+  let launcherTab = $state<'store' | 'stacks'>('store');
   let launcherAddress = $state('');
   let launcherOpened = $state(0);
   /** Settings is a window too, with one section showing; the shell remembers which (D-049). */
@@ -120,8 +121,9 @@
   // A closed window's messages go with it.
   $effect(() => traffic.retain(new Set(windows.windows.map((win) => win.id))));
 
-  export function openLauncher(address?: string): void {
+  export function openLauncher(address?: string, tab: 'store' | 'stacks' = 'store'): void {
     overlay = null;
+    launcherTab = tab;
     launcherAddress = address ?? '';
     launcherOpened += 1;
     windows.openPanel(LAUNCHER, 'Applets');
@@ -273,7 +275,7 @@
           <SettingsWindow {kernl} mode={booted.mode} downloads={booted.downloads} section={settingsSection} opened={settingsOpened} onsection={chooseSettingsSection} />
         {:else}
           {#key launcherOpened}
-            <Launcher {kernl} mode={booted.mode} {storage} initialAddress={launcherAddress} onopen={openPlan} onopenmember={openStackMember} onopenall={finishStack} />
+            <Launcher {kernl} mode={booted.mode} {storage} initialAddress={launcherAddress} initialTab={launcherTab} onopen={openPlan} onopenmember={openStackMember} onopenall={finishStack} />
           {/key}
         {/if}
       {/snippet}
@@ -282,7 +284,7 @@
 
     {#if windows.listed.length === 0}
       <div class="empty">
-        <p class="shell-muted">No applets open.{' '}<span class="with-keyboard">Press <kbd>Alt</kbd> + <kbd>/</kbd> or use the button above.</span><span class="touch">Use the button above.</span></p>
+        <p class="shell-muted">No applets open.{' '}<span class="with-keyboard">Press <kbd>Alt</kbd> + <kbd>/</kbd> or use the button above.</span><span class="touch">Use the button above.</span> On a controller, click both sticks together to switch windows or browse stacks.</p>
       </div>
     {/if}
 

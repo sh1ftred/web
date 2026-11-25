@@ -59,7 +59,7 @@
   {#if error}<p class="shell-error" role="alert">{error}</p>{/if}
   <div class="shell-actions">
     <button type="button" class="shell-button primary" onclick={confirm} disabled={busy}>Open {members.length === 1 ? 'this applet' : `all ${members.length}`}</button>
-    <button type="button" class="shell-button quiet" onclick={onback} disabled={busy}>Back</button>
+    <button type="button" class="shell-button quiet" data-pad-back onclick={onback} disabled={busy}>Back</button>
     {#if storage}
       <label class="remember">
         <input type="checkbox" bind:checked={remember} onchange={() => storage && writeRemember(storage, remember)} />

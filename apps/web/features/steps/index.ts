@@ -21,3 +21,5 @@ import './remember-grants.ts';
 import './preview-grants-for-now.ts';
 import './media-words.ts';
 import './preview-media.ts';
+import './shell-pad.ts';
+import './pad-focus.ts';

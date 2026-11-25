@@ -9,6 +9,9 @@
   import { ConsentQueue } from './consent-queue.svelte';
   import { THROWAWAY_IDENTITY_TYPE } from '@kernlize/core';
   import type { Booted, Session } from './contract';
+  import ControllerSwitcher from './ControllerSwitcher.svelte';
+  import { padFocus } from './pad-focus';
+  import { installShellPad, type ShellPadCommand } from './shell-pad';
   import Desktop from './Desktop.svelte';
   import FirewallDialog from './FirewallDialog.svelte';
   import { FirewallQueue } from './firewall-queue.svelte';
@@ -48,6 +51,18 @@
   let desktop = $state<Desktop | null>(null);
   let root = $state<HTMLElement | null>(null);
 
+  let switcher = $state<{ initial: string | undefined; step: number } | null>(null);
+  let picker = $state<ControllerSwitcher>();
+  const ask = $derived(consent.current ?? firewall.current ?? settings.current ?? replies.current ?? handlers.current);
+  const focusedApplet = $derived(windows.windows.find((win) => win.focused && !win.stopped));
+
+  // An ask owns input even when the applet that asked was playing. Blurring the
+  // manager also neutralises its subscription; moving DOM focus alone does not.
+  $effect.pre(() => {
+    if ((ask || switcher) && focusedApplet) windows.blur();
+    if (!session) switcher = null;
+  });
+
   const phase = $derived(booted === null ? 'boot' : session === null ? 'signin' : 'desktop');
   const consentTitle = $derived(consent.current ? windows.windows.find((win) => win.plan.summary.identity.hash === consent.current?.summary.applet.hash)?.plan.summary.title ?? 'An applet' : '');
 
@@ -80,7 +95,11 @@
   ];
 
   onMount(() => {
-    const cleanups: (() => void)[] = [];
+    const cleanups = [installShellPad({
+      appletOwns: () => Boolean(focusedApplet),
+      scope: () => ask ?? document.activeElement,
+      run: runPad,
+    })];
     const opened = shellTheme(readToken);
     void boot(host, new URLSearchParams(location.search), opened).then((result) => {
       booted = result;
@@ -116,13 +135,46 @@
     };
   });
 
+  function browseStacks(): void {
+    switcher = null;
+    desktop?.openLauncher(undefined, 'stacks');
+  }
+
+  function enterWindow(id: string): void {
+    switcher = null;
+    windows.focus(id);
+  }
+
+  function runPad(command: ShellPadCommand): void {
+    if (!root) return;
+    if (command === 'previous' || command === 'next' || command === 'activate') return padFocus(root, command);
+    if (command === 'back') {
+      const back = !ask && !switcher && root.querySelector<HTMLButtonElement>('.window.focused [data-pad-back], .signin [data-pad-back]');
+      if (back && !root.querySelector('[aria-modal="true"]')) back.click();
+      else dismiss();
+      return;
+    }
+    if (!desktop || ask || (!switcher && root.querySelector('[aria-modal="true"]'))) return;
+    if (command === 'stacks') return browseStacks();
+    const step = command === 'previous-window' ? -1 : command === 'next-window' ? 1 : 0;
+    if (switcher) {
+      if (step) picker?.cycle(step);
+      return;
+    }
+    const initial = windows.manager.snapshot().windows.find((win) => win.focused)?.id;
+    windows.blur();
+    root.focus();
+    switcher = { initial, step };
+  }
+
   /** Close the topmost thing the shell has open; false when nothing was. */
   function dismiss(): boolean {
     if (consent.current) consent.answer(false);
     else if (firewall.current) firewall.answer(undefined);
-    else if (replies.current) replies.answer(undefined);
     else if (settings.current) settings.close();
+    else if (replies.current) replies.answer(undefined);
     else if (handlers.current) handlers.answer(undefined);
+    else if (switcher) switcher = null;
     else if (desktop?.closeTopOverlay()) root?.focus();
     else return false;
     return true;
@@ -139,7 +191,7 @@
   // A key an applet had no shortcut for comes back through the core, so these work while an applet has focus.
   // A dialog holds the keyboard while it is open, so a key an applet sends then was not typed by the person (D-054).
   shortcuts.run = (key) => {
-    if (!(consent.current || firewall.current || replies.current || settings.current || handlers.current)) runShortcut(key);
+    if (!switcher && !ask) runShortcut(key);
   };
 
   function onKeydown(event: KeyboardEvent): void {
@@ -165,6 +217,10 @@
     <SignIn kernl={booted.kernl} mode={booted.mode} />
   {:else if booted && session}
     <Desktop bind:this={desktop} {booted} {session} {storage} {windows} {guardLog} {traffic} {opener} onproblem={(title, body) => notices.push({ title, body, tone: 'warning' })} onsignout={signOut} />
+  {/if}
+
+  {#if session && switcher && !ask}
+    <div class="switcher-layer"><ControllerSwitcher bind:this={picker} items={windows.listed} initial={switcher.initial} step={switcher.step} onchoose={enterWindow} onminimise={(id) => windows.minimise(id)} onclosewindow={(id) => windows.close(id)} onstacks={browseStacks} onclose={() => (switcher = null)} /></div>
   {/if}
 
   {#if booted && session && handlers.current}
@@ -206,6 +262,12 @@
     color: var(--ink);
     overflow: hidden;
     outline: none;
+  }
+
+  .switcher-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 400;
   }
 
   .booting {

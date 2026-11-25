@@ -17,18 +17,19 @@
     mode: BootMode;
     storage: StorageLike;
     initialAddress?: string;
+    initialTab?: 'store' | 'stacks';
     onopen: (plan: MountPlan) => void;
     onopenmember: (member: StackGrantMember, choice: GrantChoices, remember: boolean) => Promise<void>;
     onopenall: (problem: string | null) => void;
   }
 
-  const { kernl, mode, storage, initialAddress = '', onopen, onopenmember, onopenall }: Props = $props();
+  const { kernl, mode, storage, initialAddress = '', initialTab = 'store', onopen, onopenmember, onopenall }: Props = $props();
 
   type Tab = 'store' | 'stacks' | 'installed' | 'recent';
 
   // The address the shell resolves stays in state; the search field is cleared once an applet is
   // found, so a raw address is never echoed back in the summary (D-006).
-  let tab = $state<Tab>('store');
+  let tab = $state<Tab>(initialTab);
   let review = $state.raw<{ summary: AppletSummary; address: string } | null>(null);
   // A stack waiting for the person's answer: its applets are resolved and installed, none is planned yet.
   let pending = $state.raw<{ stack: AppletStack; members: readonly StackGrantMember[]; missed: number } | null>(null);

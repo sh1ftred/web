@@ -210,7 +210,7 @@
           <h3>Unlock {labelOf(unlocking)}</h3>
           <form onsubmit={(event) => (event.preventDefault(), unlock())}>
             <label class="shell-field"><span>Password</span><input class="shell-input" type="password" bind:value={password} autocomplete="current-password" /></label>
-            <div class="shell-actions"><button type="submit" class="shell-button primary" disabled={busy || !password}>Unlock</button><button type="button" class="shell-button quiet" onclick={cancel}>Back</button></div>
+            <div class="shell-actions"><button type="submit" class="shell-button primary" disabled={busy || !password}>Unlock</button><button type="button" class="shell-button quiet" data-pad-back onclick={cancel}>Back</button></div>
           </form>
         {:else if method === 'remote'}
           <h3>Connect a remote signer</h3>
@@ -219,7 +219,7 @@
             <div class="shell-actions">
               <button type="submit" class="shell-button primary" disabled={busy || !remoteCode.trim()}>Connect</button>
               <button type="button" class="shell-button" onclick={pair} disabled={busy}>Or pair from the signer</button>
-              <button type="button" class="shell-button quiet" onclick={cancel}>Back</button>
+              <button type="button" class="shell-button quiet" data-pad-back onclick={cancel}>Back</button>
             </div>
           </form>
           {#if pairingCode}
@@ -230,7 +230,7 @@
           <h3>Read-only</h3>
           <form onsubmit={(event) => (event.preventDefault(), useReadonly())}>
             <label class="shell-field"><span>Identity</span><input class="shell-input mono" type="text" bind:value={readonlyId} autocomplete="off" spellcheck="false" placeholder="Paste any form of it" /></label>
-            <div class="shell-actions"><button type="submit" class="shell-button primary" disabled={busy || !readonlyId.trim()}>Continue</button><button type="button" class="shell-button quiet" onclick={cancel}>Back</button></div>
+            <div class="shell-actions"><button type="submit" class="shell-button primary" disabled={busy || !readonlyId.trim()}>Continue</button><button type="button" class="shell-button quiet" data-pad-back onclick={cancel}>Back</button></div>
           </form>
         {:else if method === 'create'}
           <h3>Create a local identity</h3>
@@ -238,7 +238,7 @@
             <label class="shell-field"><span>Password (at least {MIN_PASSWORD} characters)</span><input class="shell-input" type="password" bind:value={password} autocomplete="new-password" /></label>
             <label class="shell-field"><span>Repeat the password</span><input class="shell-input" type="password" bind:value={confirm} autocomplete="new-password" /></label>
             <p class="shell-muted">The key is generated here and encrypted with this password. Lose the password and the identity is gone; nobody can reset it.</p>
-            <div class="shell-actions"><button type="submit" class="shell-button primary" disabled={busy || !password || !confirm}>Create and sign in</button><button type="button" class="shell-button quiet" onclick={cancel}>Back</button></div>
+            <div class="shell-actions"><button type="submit" class="shell-button primary" disabled={busy || !password || !confirm}>Create and sign in</button><button type="button" class="shell-button quiet" data-pad-back onclick={cancel}>Back</button></div>
           </form>
         {/if}
       </section>
