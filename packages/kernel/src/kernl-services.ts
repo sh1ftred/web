@@ -26,7 +26,7 @@ import {
 import type { Theme } from '@napplet/nap/theme/types';
 import type { EventTemplate, NostrEvent } from '@napplet/core';
 import { createBridgeRegistry, createBridgeResourceResolver, type BridgeContext, type BridgeRegistry, type ResourceResolveInit } from '@kernlize/bridges';
-import type { KernlHost, RelayTiers } from './types.js';
+import type { KernlHost, OutboxCacheInventory, RelayTiers } from './types.js';
 import { createKernlMedia, type KernlMedia } from './media/kernl-media.js';
 import type { ApplesaucePool } from './applesauce/relay-hooks.js';
 import { createAppletRelayService, createOutboxRelayPool } from './applesauce/relay-backend.js';
@@ -97,6 +97,7 @@ export interface KernlServices {
   readonly theme: ThemeService;
   /** The `media` service under the person's media settings. */
   readonly media: KernlMedia;
+  readonly outboxCache?: OutboxCacheInventory;
 }
 
 function toRelayListEntry(relays: RelayPermissions): RelayListEntry {
@@ -269,7 +270,7 @@ function createIdentitySigner(auth: KernlServiceDeps['auth']): () => Signer | nu
   };
 }
 
-function createOutbox(deps: KernlServiceDeps, identity: IdentityProviders) {
+function createOutbox(deps: KernlServiceDeps, identity: IdentityProviders, cache: ReturnType<typeof createOutboxEventCache> | undefined) {
   const router = createRelayPoolOutboxRouter({
     relayPool: createOutboxRelayPool(deps.pool),
     fallbackRelays: [...deps.tiers.get().super],
@@ -290,16 +291,7 @@ function createOutbox(deps: KernlServiceDeps, identity: IdentityProviders) {
     verifyEvent: (event) => verifyEvent(event),
   });
   const accepting = acceptAnyRelay(router) as typeof router;
-  if (!deps.cacheOutboxReads) return createOutboxService({ router: accepting });
-  return createCachedOutboxService({
-    router: accepting,
-    cache: createOutboxEventCache(deps.host.outboxCacheStorage),
-    scope(windowId) {
-      const applet = deps.resolveIdentity(windowId);
-      if (!applet) return undefined;
-      return JSON.stringify([applet.dTag, applet.aggregateHash, deps.auth.getUserPubkey?.() ?? null]);
-    },
-  });
+  return cache ? createCachedOutboxService({ router: accepting, cache }) : createOutboxService({ router: accepting });
 }
 
 /**
@@ -371,6 +363,7 @@ export function createKernlServices(deps: KernlServiceDeps): KernlServices {
   // Built when an applet first asks, so the core runs where there is no document to play in.
   const media = createKernlMedia({ storage: deps.host.storage, playback: { open: (...args) => createBrowserMediaPlayback({ resource }).open(...args) }, isFocused: deps.shortcuts.isFocused });
 
+  const outboxCache = deps.cacheOutboxReads ? createOutboxEventCache(deps.host.outboxCacheStorage) : undefined;
   const registry: ServiceRegistry = {
     relay: createAppletRelayService(deps.pool, deps.tiers),
     identity: createIdentityService({ getSigner: createIdentitySigner(deps.auth), ...identity }),
@@ -390,9 +383,9 @@ export function createKernlServices(deps: KernlServiceDeps): KernlServices {
     // The firewall approves a web address's server before it is contacted (D-056); a bridge's reason becomes a NAP-RESOURCE code (D-055).
     ...(deps.bridges ? { resource } : {}),
     media: media.handler,
-    outbox: gateOutboxPublish(createOutbox(deps, identity), deps.consent),
+    outbox: gateOutboxPublish(createOutbox(deps, identity, outboxCache), deps.consent),
     ...(deps.config ? { config: createConfigService(deps.config).handler } : {}),
     ...(deps.uploader ? { upload: createUploadService({ uploader: deps.uploader, uploadInfo: { rails: [{ rail: 'blossom', enabled: true }] } }) } : {}),
   };
-  return { registry, theme, media };
+  return { registry, theme, media, ...(outboxCache ? { outboxCache: { snapshot: outboxCache.snapshot } } : {}) };
 }

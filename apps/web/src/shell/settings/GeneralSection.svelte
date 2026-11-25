@@ -17,6 +17,10 @@
     <button type="button" class="shell-button" onclick={toggleTheme}>Switch between light and dark</button>
   </div>
 </section>
+<section class="shell-section" aria-labelledby="controller-heading">
+  <h3 id="controller-heading">Controller</h3>
+  <p>Click both sticks together to leave an applet and pick a window. In the shell, use the D-pad to move, A / × to choose, B / ○ to go back, or Y / △ to browse stacks.</p>
+</section>
 <section class="shell-section" aria-labelledby="about-heading">
   <h3 id="about-heading">About</h3>
   <dl class="shell-rows">

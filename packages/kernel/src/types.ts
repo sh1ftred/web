@@ -530,6 +530,27 @@ export interface GuardFacade {
   release(windowId: string): void;
 }
 
+/** A distinct, verified public event held in the Outbox cache. */
+export interface CachedOutboxEvent {
+  readonly id: string;
+  readonly kind: number;
+  /** Event timestamp in Unix seconds. */
+  readonly createdAt: number;
+  /** Public relays that actually supplied this event. */
+  readonly relays: readonly string[];
+}
+
+/** Read-only inventory for the shell host; it is not offered to applets. */
+export interface OutboxCacheInventory {
+  /**
+   * List unexpired public cached events, newest first, once per event id.
+   * @returns A detached snapshot with observed sources, without event bodies.
+   * @example
+   * const count = kernl.outboxCache?.snapshot().length;
+   */
+  snapshot(): readonly CachedOutboxEvent[];
+}
+
 /**
  * The composed shell: the kernel's own members. A host that names its modules gets this with each
  * module's api beside it; `Kernl` is this with kernl's own (D-062, D-068).
@@ -553,6 +574,8 @@ export interface Kernel {
   readonly firewall: Firewall;
   /** Media applets play through the shell, and the person's media settings (D-063). */
   readonly media: KernlMedia;
+  /** Unavailable when the public Outbox observation cache is not enabled. */
+  readonly outboxCache?: OutboxCacheInventory;
   readonly session$: Observable<Session | null>;
   readonly session: Session | null;
   login(account: IAccount): Promise<Session>;

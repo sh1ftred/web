@@ -27,7 +27,7 @@ function state(storage = new MemoryStorage()) {
     timeline.push(...(args[0] as string[]));
     return req(...args);
   };
-  const service = createKernlServices({
+  const services = createKernlServices({
     pool,
     tiers: createRelayTiers(storage, { super: [] }),
     eventStore: new EventStore(),
@@ -37,18 +37,17 @@ function state(storage = new MemoryStorage()) {
     host: { storage, outboxCacheStorage: storage, notify() {}, openLink() {} },
     shortcuts: { isFocused: () => true },
     resolveIdentity: () => artifact ? { dTag: 'test-tree', aggregateHash: artifact } : null,
-  }).registry.outbox as ServiceHandler;
+  });
+  const service = services.registry.outbox as ServiceHandler;
   service.onRegistered?.({
     authorizeOperation: async (_window, _operation, _requirements, execute) => (await authorize())
       ? { status: 'executed', value: await execute(new AbortController().signal as ApprovalSignal) }
       : { status: 'denied' },
   } as ServiceRuntimeContext);
   return {
-    service, pool, sent, timeline, storage,
+    service, pool, sent, timeline, storage, outboxCache: services.outboxCache,
     onSendWith(next: typeof onSend) { onSend = next; },
     authorizeWith(fn: typeof authorize) { authorize = fn; },
-    removeArtifact() { artifact = undefined; },
-    signOut() { identity = null; },
     swapArtifact() { artifact = 'other-artifact'; },
     swapIdentity() { identity = 'other-user'; },
     send(message: NappletMessage) {
@@ -101,7 +100,7 @@ async function observe(world: CoreWorld, event: Event, relays: string[], filter:
 
 Given('a previously observed Outbox tree event on {string}', async (world: CoreWorld, relay: string) => {
   const event = await signEvent({ kind: 31971, tags: [['A', ROOT], ['d', 'problem']] });
-  await observe(world, event, [relay], TREE);
+  await observe(world, event, relayList(relay), TREE);
 });
 
 When('its applet subscribes to the tree on {string}', async (world: CoreWorld, relays: string) => {
@@ -142,9 +141,6 @@ Then('a live copy from another approved relay adds its observed hint', async (wo
 
 When(/^an Outbox read changes its (.+)$/u, async (world: CoreWorld, boundary: string) => {
   const s = fixture(world);
-  if (boundary === 'applet artifact') s.current.swapArtifact();
-  if (boundary === 'signed-out account') s.current.signOut();
-  if (boundary === 'shell identity') s.current.swapIdentity();
   if (boundary === 'relay plan') s.relays = [SECOND];
   if (boundary === 'filter author') s.filter = { ...TREE, authors: ['f'.repeat(64)] };
   if (boundary === 'filter tag') s.filter = { ...TREE, '#A': ['a different tree'] };
@@ -187,7 +183,7 @@ Then('the one-shot query waits for the relay deadline and returns the cached eve
   expect(s.current.timeline).toEqual([FIRST, SECOND, 'outbox.query.result']);
 });
 
-When('that author deletes it on the same Outbox relay', async (world: CoreWorld) => {
+When("its applet explicitly subscribes to the author's deletion", async (world: CoreWorld) => {
   const s = fixture(world);
   const deletion = await signEvent({ kind: 5, tags: [['a', `31971:${s.event.pubkey}:problem`]], created_at: s.event.created_at + 1 });
   s.current.pool.events = [deletion];
@@ -252,56 +248,15 @@ Then('live Outbox still sends the event', (world: CoreWorld) => {
   s.current.service.onUnregistered?.();
 });
 
-When('that author deletes it on a different approved Outbox relay', async (world: CoreWorld) => {
-  const s = fixture(world);
-  const deletion = await signEvent({ kind: 5, tags: [['e', s.event.id]], created_at: s.event.created_at + 1 });
-  s.current.pool.events = [deletion];
-  subscribe(s, { relays: [SECOND], filters: { kinds: [5], '#e': [s.event.id] } });
-  await settle();
-  clear(s);
-});
-
-When('its applet queries with a limit of one and a newer event online', async (world: CoreWorld) => {
+When(/^its applet queries with a (filter limit|limit) of one and a newer event online$/u, async (world: CoreWorld, source: string) => {
   const s = fixture(world);
   s.current.pool.events = [await signEvent({ kind: 31971, tags: [['A', ROOT], ['d', 'new']], created_at: s.event.created_at + 1 })];
-  s.current.send({ type: 'outbox.query', id: 'query', filters: s.filter, options: { relays: s.relays, timeoutMs: 30, limit: 1 } } as NappletMessage);
+  s.current.send({ type: 'outbox.query', id: 'query', filters: source === 'filter limit' ? { ...s.filter, limit: 1 } : s.filter, options: { relays: s.relays, timeoutMs: 30, ...(source === 'limit' ? { limit: 1 } : {}) } } as NappletMessage);
 });
 
 Then('only the newer event is returned at the query deadline', async (world: CoreWorld) => {
   const s = fixture(world);
   await expect.poll(() => s.current.sent).toEqual([{ type: 'outbox.query.result', id: 'query', events: [{ event: s.current.pool.events[0], sidecar: { relayHints: [FIRST] } }] }]);
-});
-
-When('its applet queries and the shell changes identity before the deadline', async (world: CoreWorld) => {
-  const s = fixture(world);
-  s.current.send({ type: 'outbox.query', id: 'query', filters: s.filter, options: { relays: s.relays, timeoutMs: 80 } } as NappletMessage);
-  await settle();
-  s.current.swapIdentity();
-});
-
-Then("the query completes without the old identity's cache", async (world: CoreWorld) => {
-  const s = fixture(world);
-  await expect.poll(() => s.current.sent).toEqual([{ type: 'outbox.query.result', id: 'query', events: [] }]);
-});
-
-When('its applet subscribes to the tree on {string} with no relay events', async (world: CoreWorld, relay: string) => {
-  const s = fixture(world);
-  clear(s);
-  subscribe(s, { relays: [relay] });
-  await settle();
-});
-
-When('the same reads arrive without a verified applet identity', async (world: CoreWorld) => {
-  const s = fixture(world);
-  s.current.removeArtifact();
-  subscribe(s);
-  s.current.send({ type: 'outbox.query', id: 'query', filters: s.filter, options: { relays: s.relays, timeoutMs: 20 } } as NappletMessage);
-});
-
-Then('neither read receives cached events', async (world: CoreWorld) => {
-  const s = fixture(world);
-  await expect.poll(() => s.current.sent).toEqual([{ type: 'outbox.query.result', id: 'query', events: [] }]);
-  expect(s.current.timeline).toEqual([FIRST, FIRST, 'outbox.query.result']);
 });
 
 When('the applet opens two live reads and closes the first', async (world: CoreWorld) => {
@@ -353,18 +308,6 @@ Then('the cache is sent only to the approved subscription', (world: CoreWorld) =
   expect(results(s).map(({ event }) => event.id)).toEqual([s.event.id]);
 });
 
-When('its applet subscribes and the shell changes identity before approval', async (world: CoreWorld) => {
-  const s = fixture(world);
-  const approval = Promise.withResolvers<boolean>();
-  s.current.authorizeWith(() => approval.promise);
-  subscribe(s);
-  await settle();
-  s.current.swapIdentity();
-  approval.resolve(true);
-  await settle();
-  expect(s.current.timeline).toEqual([FIRST]);
-});
-
 When('its applet queries with a limit of one and another event at the same time', async (world: CoreWorld) => {
   const s = fixture(world);
   s.current.pool.events = [await signEvent({ kind: 31971, tags: [['A', ROOT], ['d', 'new']], created_at: s.event.created_at })];
@@ -389,29 +332,48 @@ Then('that id lookup contacts the relay normally', async (world: CoreWorld) => {
   expect(s.current.timeline).toEqual([FIRST, 'outbox.getEvent.result']);
 });
 
-When('the applet queries and then observes a deletion before the query finishes', async (world: CoreWorld) => {
+When('a different applet subscribes after the shell changes identity', async (world: CoreWorld) => {
   const s = fixture(world);
-  const deletion = await signEvent({ kind: 5, tags: [['e', s.event.id]], created_at: s.event.created_at + 1 });
-  s.current.send({ type: 'outbox.query', id: 'query', filters: s.filter, options: { relays: s.relays, timeoutMs: 100 } } as NappletMessage);
+  s.current.swapArtifact();
+  s.current.swapIdentity();
+  subscribe(s);
   await settle();
-  s.current.pool.events = [deletion];
-  subscribe(s, { filters: { kinds: [5], '#e': [s.event.id] } });
-  await settle();
-  expect(results(s).map(({ event }) => event.id)).toEqual([deletion.id]);
 });
 
-Then('the query completes without the deleted cached event', async (world: CoreWorld) => {
+Then('it receives the cached tree event before its relay opens', (world: CoreWorld) => {
   const s = fixture(world);
-  await expect.poll(() => s.current.sent.find(({ type }) => type === 'outbox.query.result')).toEqual({ type: 'outbox.query.result', id: 'query', events: [] });
-  s.current.service.onUnregistered?.();
+  expect(s.current.timeline).toEqual(['outbox.event', FIRST]);
+  expect(results(s).map(({ event }) => event.id)).toEqual([s.event.id]);
 });
 
-Given('an Outbox subscription observes a public tree address deletion before its target', async (world: CoreWorld) => {
-  const event = await signEvent({ kind: 31971, tags: [['A', ROOT], ['d', 'problem']] });
-  const address = `31971:${event.pubkey}:problem`;
-  const deletion = await signEvent({ kind: 5, tags: [['a', address]], created_at: event.created_at + 1 });
-  await observe(world, deletion, [FIRST], { kinds: [5], '#a': [address] });
+Then('the deletion is delivered live but not cached and the tree event still replays', async (world: CoreWorld) => {
   const s = fixture(world);
-  s.event = event;
-  s.filter = TREE;
+  subscribe(s, { filters: { kinds: [5] } });
+  await settle();
+  expect(results(s)).toEqual([]);
+  subscribe(s);
+  await settle();
+  expect(results(s).map(({ event }) => event.id)).toEqual([s.event.id]);
+});
+
+When('its applet queries with independently limited filters and an overall limit', async (world: CoreWorld) => {
+  const s = fixture(world);
+  const fresh = await signEvent({ kind: 31971, tags: [['A', ROOT]], created_at: s.event.created_at + 1 });
+  const comment = await signEvent({ kind: 1111, tags: [], created_at: s.event.created_at - 1 });
+  s.current.pool.events = [comment, fresh];
+  const filters = [{ ...s.filter, limit: 1 }, { kinds: [1111], limit: 1 }];
+  s.current.send({ type: 'outbox.query', id: 'query', filters, options: { relays: s.relays, timeoutMs: 30, limit: 2 } } as NappletMessage);
+});
+
+Then('the query returns the newest match from each limited filter', async (world: CoreWorld) => {
+  const s = fixture(world);
+  const ids = s.current.pool.events.map(({ id }) => id).reverse();
+  await expect.poll(() => s.current.sent).toMatchObject([{ type: 'outbox.query.result', events: ids.map((id) => ({ event: { id } })) }]);
+});
+
+Then('the shell cache lists that event once with both observed relay URLs', (world: CoreWorld) => {
+  const { current, event } = fixture(world);
+  expect(current.outboxCache?.snapshot()).toEqual([{
+    id: event.id, kind: event.kind, createdAt: event.created_at, relays: [FIRST, SECOND].sort(),
+  }]);
 });

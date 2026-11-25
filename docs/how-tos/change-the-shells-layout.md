@@ -18,6 +18,16 @@ The bar's layout control shows the layout in use. Each click switches to the nex
 
 The choice is kept under `kernl:layout:v1` as the layout's id ([Persistence](../concepts/persistence.md#keys-the-shell-app-writes)). At 720 px wide or less windows fill the desktop in every layout; Stacked still hides every window behind the front one ([Layouts](../concepts/layouts.md#narrow-desktops)).
 
+## Switch windows with a controller
+
+On a standard gamepad, click **both sticks together** to bring up the controller switcher. It lists your open windows, including minimised ones. Use the bumpers to highlight a window without sending it input; release **A / ×** to bring it forward. Use the D-pad to reach its **Minimise** and **Close** buttons. This works in Stacked layout without reopening any applets.
+
+- **Y / △** in the shell jumps to **Stacks**. Use the D-pad or left stick to highlight the next or previous control. Use **A / ×** to show a stack’s applets, tick individual members, and open the selection through the usual permission review.
+- **B / ○** goes back from a review or dismisses the current sheet. In a permission question it declines rather than approves. The switcher cannot jump past a question.
+- When an applet has focus, ordinary presses, including Menu and the bumpers, belong to the applet, not the shell. Use the two-stick gesture to leave it. The switcher takes focus away from the applet; picking its window hands focus back.
+
+Try it without a live identity at `/app/?preview=1`: press a controller button to wake the pad, use the D-pad and A to choose **Try the preview**, then press Y to browse **Basics** and **Live**. Text entry, such as a password or a pasted applet address, still uses your device’s keyboard.
+
 ## Change the spacing
 
 `createShellLayouts` builds the registry the shell uses. kernl's three tiling layouts share `LayoutOptions`: `gap` is the pixels between windows, and `margin` the pixels between the windows and the desktop edge, which defaults to `gap`. The shell asks for 8 and 0:
