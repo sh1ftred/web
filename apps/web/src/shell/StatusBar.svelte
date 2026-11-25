@@ -9,12 +9,13 @@
     profile: string;
     guardEvents: number;
     unread: number;
+    cachedEvents: number | undefined;
     onlauncher: () => void;
-    onpanel: (kind: 'guard' | 'firewall' | 'messages' | 'settings' | 'downloads') => void;
+    onpanel: (kind: 'guard' | 'firewall' | 'messages' | 'settings' | 'downloads' | 'cache') => void;
     onsignout: () => void;
   }
 
-  const { windows, session, mode, profile, guardEvents, unread, onlauncher, onpanel, onsignout }: Props = $props();
+  const { windows, session, mode, profile, guardEvents, unread, cachedEvents, onlauncher, onpanel, onsignout }: Props = $props();
 
   /** Below this width the bar keeps the launcher and moves everything else into one menu. */
   const COMPACT_QUERY = '(max-width: 720px)';
@@ -55,6 +56,11 @@
 {#snippet downloadsButton()}
   <button type="button" class="shell-button quiet" onclick={() => choose(() => onpanel('downloads'))}>Downloads</button>
 {/snippet}
+{#snippet cacheButton()}
+  <button type="button" class="shell-button quiet" onclick={() => choose(() => onpanel('cache'))}>
+    Cached events · {cachedEvents ?? '—'}
+  </button>
+{/snippet}
 {#snippet dock()}
   {#if minimised.length}
     <ul class="dock" aria-label="Minimised windows">
@@ -79,6 +85,7 @@
         {@render firewallButton()}
         {@render messagesButton()}
         {@render downloadsButton()}
+        {@render cacheButton()}
         {#if windows.canSwitchLayout}
           <button type="button" class="shell-button quiet" onclick={() => choose(() => windows.setLayout(windows.nextLayout.id))}>Layout: {windows.layout.label} · {windowCount}</button>
         {:else}
@@ -103,6 +110,7 @@
       {@render firewallButton()}
       {@render messagesButton()}
       {@render downloadsButton()}
+      {@render cacheButton()}
       <details class="account" bind:open={accountOpen}>
         <summary class="shell-button quiet">{session.label}{#if session.readOnly} <span class="shell-badge">read-only</span>{/if}</summary>
         <div class="menu">

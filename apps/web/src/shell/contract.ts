@@ -29,6 +29,7 @@ export type {
   AppletSummary,
   BuiltinApplet,
   CatalogEntry,
+  CachedOutboxEvent,
   ConsentPrompt,
   ConsentSummary,
   Firewall,

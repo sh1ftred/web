@@ -2,7 +2,7 @@ import { createRelayEventResultWithHints, type RelayEventResult } from '@kehto/r
 import type { OutboxRelayPlan, StreamingOutboxRouter } from '@kehto/services';
 import { isEvent, matchFilter, verifyEvent, type NostrEvent } from 'applesauce-core/helpers';
 import { asFilters } from './applesauce/relay-hooks.js';
-import type { StorageLike } from './types.js';
+import type { CachedOutboxEvent, StorageLike } from './types.js';
 
 const STORAGE_KEY = 'kernl:outbox-tree-events:v2';
 const PUBLIC_TREE_KINDS = new Set([31971, 31969, 31108, 1111]);
@@ -96,6 +96,19 @@ export function createOutboxEventCache(storage?: StorageLike) {
     }
   }
 
+  function snapshot(): readonly CachedOutboxEvent[] {
+    const cutoff = Date.now() - MAX_AGE_MS;
+    const grouped = new Map<string, { kind: number; createdAt: number; relays: Set<string> }>();
+    for (const { event, relay, observed } of load()) {
+      if (observed <= cutoff) continue;
+      const entry = grouped.get(event.id);
+      if (entry) entry.relays.add(relay);
+      else grouped.set(event.id, { kind: event.kind, createdAt: event.created_at, relays: new Set([relay]) });
+    }
+    return Array.from(grouped, ([id, entry]) => ({ ...entry, id, relays: [...entry.relays].sort() }))
+      .sort((a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id));
+  }
+
   function open(filters: Filters, plan: OutboxRelayPlan, authors: readonly string[] | undefined) {
     const relays = plannedRelays(plan);
     if (relays.size === 0 || filters.length > MAX_FILTERS || (authors?.length ?? 0) > MAX_FILTER_VALUES) return undefined;
@@ -149,5 +162,5 @@ export function createOutboxEventCache(storage?: StorageLike) {
     };
   }
 
-  return { open, persist };
+  return { open, persist, snapshot };
 }

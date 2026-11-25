@@ -336,6 +336,7 @@ export function createKernel<const M extends readonly AnyKernlModule[]>(options:
     secrets: secrets.description,
     firewall,
     media: services.media,
+    ...(services.outboxCache ? { outboxCache: services.outboxCache } : {}),
     session$,
     get session() {
       return session$.value;

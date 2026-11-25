@@ -74,6 +74,7 @@ describe('the public Outbox observation cache', () => {
     try {
       vi.advanceTimersByTime(24 * 60 * 60 * 1_000);
       expect(open(cache).replay()).toEqual([]);
+      expect(cache.snapshot()).toEqual([]);
     } finally {
       vi.useRealTimers();
     }
@@ -87,4 +88,15 @@ it('keeps observations in memory when the host offers no session backing', () =>
   expect(open(cache).replay()).toHaveLength(1);
   cache.persist();
   expect(open(createOutboxEventCache()).replay()).toEqual([]);
+});
+
+it('lists newest unique cached events with detached relay lists', () => {
+  const cache = createOutboxEventCache();
+  const older = sign();
+  const newer = finalizeEvent({ kind: 31971, content: 'new', tags: [], created_at: 1235 }, KEY);
+  const observation = open(cache);
+  observation.observe(result(older, [RELAY]));
+  observation.observe(result(newer, [RELAY]));
+  expect(cache.snapshot().map(({ id }) => id)).toEqual([newer.id, older.id]);
+  expect(cache.snapshot()[0]?.relays).not.toBe(cache.snapshot()[0]?.relays);
 });

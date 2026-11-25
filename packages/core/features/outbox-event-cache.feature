@@ -102,3 +102,7 @@ Feature: Approved Outbox reads reuse public tree events
     Given a previously observed Outbox tree event on "wss://nos.lol"
     When its applet queries with independently limited filters and an overall limit
     Then the query returns the newest match from each limited filter
+
+  Scenario: The shell reports unique cached events by their observed relays
+    Given a previously observed Outbox tree event on "wss://nos.lol, wss://relay.routstr.com"
+    Then the shell cache lists that event once with both observed relay URLs

@@ -2,7 +2,7 @@
   import { untrack } from 'svelte';
   import { openReviewedMember, type StackGrantMember } from './stack-grants';
   import type { GrantChoices } from '@kernlize/ui-model';
-  import type { Booted, MountPlan, Session, StorageLike } from './contract';
+  import type { Booted, CachedOutboxEvent, MountPlan, Session, StorageLike } from './contract';
   import FirewallPanel from './FirewallPanel.svelte';
   import GrantsPanel from './GrantsPanel.svelte';
   import { createReloader } from './reload';
@@ -13,6 +13,7 @@
   import GuardPanel from './GuardPanel.svelte';
   import IframeLayer from './IframeLayer.svelte';
   import DownloadsPanel from './DownloadsPanel.svelte';
+  import OutboxCachePanel from './OutboxCachePanel.svelte';
   import Launcher from './Launcher.svelte';
   import MediaBar from './MediaBar.svelte';
   import { mediaTitle, sessionOfPanel, videoPanel } from './media-words';
@@ -44,9 +45,20 @@
   const { booted, session, storage, windows, guardLog, traffic, opener, onproblem, onsignout }: Props = $props();
   const kernl = $derived(booted.kernl);
 
-  type Overlay = { kind: 'grants'; windowId: string } | { kind: 'inspect'; windowId: string } | { kind: 'guard' } | { kind: 'firewall' } | { kind: 'downloads' };
+  type Overlay = { kind: 'grants'; windowId: string } | { kind: 'inspect'; windowId: string } | { kind: 'guard' } | { kind: 'firewall' } | { kind: 'downloads' } | { kind: 'cache' };
 
   let overlay = $state.raw<Overlay | null>(null);
+  let cachedEvents = $state.raw<readonly CachedOutboxEvent[] | undefined>(undefined);
+  function refreshCache(): void {
+    cachedEvents = kernl.outboxCache?.snapshot();
+  }
+  $effect(() => {
+    refreshCache();
+    if (!kernl.outboxCache) return;
+    // Coalesce bursts of live events and update the count when observations expire.
+    const timer = setInterval(refreshCache, 2_000);
+    return () => clearInterval(timer);
+  });
   /** The store is a window like any other (D-048); it is opened at an address when one was shared. */
   const LAUNCHER = 'launcher';
   let launcherAddress = $state('');
@@ -177,8 +189,9 @@
   const showsMessages = (win: (typeof windows.windows)[number]): boolean => win.status !== 'revoked' && win.plan.summary.archetypes.includes('dm');
   const reading = $derived(windows.windows.some((win) => win.focused && showsMessages(win)));
 
-  function panel(kind: 'guard' | 'firewall' | 'messages' | 'settings' | 'downloads'): void {
+  function panel(kind: 'guard' | 'firewall' | 'messages' | 'settings' | 'downloads' | 'cache'): void {
     if (kind === 'settings') return openSettings();
+    if (kind === 'cache') refreshCache();
     if (kind !== 'messages') return openOverlay({ kind });
     overlay = null;
     asked = true;
@@ -246,7 +259,7 @@
 </script>
 
 <div class="desktop">
-  <StatusBar {windows} {session} mode={booted.mode} profile={profile.value} guardEvents={guardLog.total} unread={unread.count} onlauncher={() => openLauncher()} onpanel={panel} {onsignout} />
+  <StatusBar {windows} {session} mode={booted.mode} profile={profile.value} guardEvents={guardLog.total} unread={unread.count} cachedEvents={cachedEvents?.length} onlauncher={() => openLauncher()} onpanel={panel} {onsignout} />
 
   <div class="desk" bind:this={desk} role="presentation">
     <div class="wallpaper" onpointerdown={() => windows.blur()}></div>
@@ -281,6 +294,8 @@
       <GuardPanel {kernl} {guardLog} {windows} onclose={() => (overlay = null)} />
     {:else if overlay?.kind === 'firewall'}
       <FirewallPanel {kernl} {windows} {onproblem} onclose={() => (overlay = null)} />
+    {:else if overlay?.kind === 'cache'}
+      <OutboxCachePanel events={cachedEvents} onclose={() => (overlay = null)} />
     {:else if overlay?.kind === 'downloads'}
       <DownloadsPanel {kernl} downloads={booted.downloads} onclose={() => (overlay = null)} onsettings={() => openSettings('downloads')} />
     {/if}

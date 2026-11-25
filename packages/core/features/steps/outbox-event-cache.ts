@@ -27,7 +27,7 @@ function state(storage = new MemoryStorage()) {
     timeline.push(...(args[0] as string[]));
     return req(...args);
   };
-  const service = createKernlServices({
+  const services = createKernlServices({
     pool,
     tiers: createRelayTiers(storage, { super: [] }),
     eventStore: new EventStore(),
@@ -37,14 +37,15 @@ function state(storage = new MemoryStorage()) {
     host: { storage, outboxCacheStorage: storage, notify() {}, openLink() {} },
     shortcuts: { isFocused: () => true },
     resolveIdentity: () => artifact ? { dTag: 'test-tree', aggregateHash: artifact } : null,
-  }).registry.outbox as ServiceHandler;
+  });
+  const service = services.registry.outbox as ServiceHandler;
   service.onRegistered?.({
     authorizeOperation: async (_window, _operation, _requirements, execute) => (await authorize())
       ? { status: 'executed', value: await execute(new AbortController().signal as ApprovalSignal) }
       : { status: 'denied' },
   } as ServiceRuntimeContext);
   return {
-    service, pool, sent, timeline, storage,
+    service, pool, sent, timeline, storage, outboxCache: services.outboxCache,
     onSendWith(next: typeof onSend) { onSend = next; },
     authorizeWith(fn: typeof authorize) { authorize = fn; },
     swapArtifact() { artifact = 'other-artifact'; },
@@ -99,7 +100,7 @@ async function observe(world: CoreWorld, event: Event, relays: string[], filter:
 
 Given('a previously observed Outbox tree event on {string}', async (world: CoreWorld, relay: string) => {
   const event = await signEvent({ kind: 31971, tags: [['A', ROOT], ['d', 'problem']] });
-  await observe(world, event, [relay], TREE);
+  await observe(world, event, relayList(relay), TREE);
 });
 
 When('its applet subscribes to the tree on {string}', async (world: CoreWorld, relays: string) => {
@@ -368,4 +369,11 @@ Then('the query returns the newest match from each limited filter', async (world
   const s = fixture(world);
   const ids = s.current.pool.events.map(({ id }) => id).reverse();
   await expect.poll(() => s.current.sent).toMatchObject([{ type: 'outbox.query.result', events: ids.map((id) => ({ event: { id } })) }]);
+});
+
+Then('the shell cache lists that event once with both observed relay URLs', (world: CoreWorld) => {
+  const { current, event } = fixture(world);
+  expect(current.outboxCache?.snapshot()).toEqual([{
+    id: event.id, kind: event.kind, createdAt: event.created_at, relays: [FIRST, SECOND].sort(),
+  }]);
 });
